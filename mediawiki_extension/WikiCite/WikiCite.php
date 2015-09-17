@@ -60,6 +60,7 @@ include __DIR__ . '/CiteProc.php';
 function RenderCite($cite_key = '', $cite_format = "p", $cite_style = "b") {
     global $wgWikiCiteLinkerURL;
     global $wgWikiCiteZoteroGroupID;
+    global $wgWikiCiteZoteroGroup;
 
     $link_data = json_decode(file_get_contents($wgWikiCiteLinkerURL . 'wikicite_api.php?wiki_id=' . $cite_key)); 
     
@@ -75,7 +76,7 @@ function RenderCite($cite_key = '', $cite_format = "p", $cite_style = "b") {
             
     } else {
         $output = "[https://www.zotero.org/groups/" . $wgWikiCiteZoteroGroup . "/items/itemKey/";
-        $output .= $row["zotero_id"];
+        $output .= $link_data->{'zotero_id'} . " ";
     }
 
 
@@ -120,7 +121,7 @@ function RenderCite($cite_key = '', $cite_format = "p", $cite_style = "b") {
         };
         
         $cite_style = preg_replace("([^a-zA-Z-])", '', $cite_style); 
-        $csl = file_get_contents(__DIR__ . '/' . $cite_style . '.csl'); 
+        $csl = file_get_contents(__DIR__ . '/csl/' . $cite_style . '.csl'); 
         $citeproc = new citeproc($csl);
         $output .=  $citeproc->render($data->items[0], "citation");
         $output .= "]";
@@ -214,7 +215,6 @@ function CiteReferenceRenderParserFunction( $parser, $ref_key, $ref_style = 'b')
     global $wgWikiCiteLinkerURL;
     global $wgWikiCiteZoteroGroupID;
 
-    $file_connt = file_get_contents($wgWikiCiteLinkerURL . 'wikicite_api.php?wiki_id=' . $ref_key);
     $link_data = json_decode(file_get_contents($wgWikiCiteLinkerURL . '/wikicite_api.php?wiki_id=' . $ref_key));
     
     //$parser->disableCache();
@@ -238,19 +238,23 @@ function CiteReferenceRenderParserFunction( $parser, $ref_key, $ref_style = 'b')
         $output .= $data->{'data'}->{'title'};
         $output .= "\n";
     } else {
-        $data = json_decode(file_get_contents('https://api.zotero.org/groups/' . $wgWikiCiteZoteroGroupID  . '/items/' . $link_data->{'zotero_id'} . '?format=csljson'));
-        if (!property_exists($data->items[0]->issued, "date-parts") && property_exists($data->items[0]->issued, "raw") ) {
-            if (is_numeric($data->items[0]->issued->raw)) {
-                $data->items[0]->issued->{'date-parts'}[0][0] = $data->items[0]->issued->raw;
-            } else {
-                $data->items[0]->issued->{'date-parts'}[0][0] = date_parse($data->items[0]->issued->raw)["year"];
-                $data->items[0]->issued->{'date-parts'}[0][1] = date_parse($data->items[0]->issued->raw)["month"];
-            }
-        };
-        $ref_style = preg_replace("([^a-zA-Z-])", '', $ref_style);
-        $csl = file_get_contents(__DIR__ . '/'. $ref_style . '.csl');
-        $citeproc = new citeproc($csl);
-        $output .=  $citeproc->render($data->items[0], "bibliography");
+        if (!property_exists( $link_data, 'zotero_id')) {
+            $output .=  $ref_key . " could not be found";
+        } else {
+            $data = json_decode(file_get_contents('https://api.zotero.org/groups/' . $wgWikiCiteZoteroGroupID  . '/items/' . $link_data->{'zotero_id'} . '?format=csljson'));
+            if (!property_exists($data->items[0]->issued, "date-parts") && property_exists($data->items[0]->issued, "raw") ) {
+                if (is_numeric($data->items[0]->issued->raw)) {
+                    $data->items[0]->issued->{'date-parts'}[0][0] = $data->items[0]->issued->raw;
+                } else {
+                    $data->items[0]->issued->{'date-parts'}[0][0] = date_parse($data->items[0]->issued->raw)["year"];
+                    $data->items[0]->issued->{'date-parts'}[0][1] = date_parse($data->items[0]->issued->raw)["month"];
+                }
+            };
+            $ref_style = preg_replace("([^a-zA-Z-])", '', $ref_style);
+            $csl = file_get_contents(__DIR__ . '/csl/'. $ref_style . '.csl');
+            $citeproc = new citeproc($csl);
+            $output .=  $citeproc->render($data->items[0], "bibliography");
+        }
     }
 
  

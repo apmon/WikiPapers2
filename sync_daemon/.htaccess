@@ -1,0 +1,9 @@
+<Files .htaccess>
+    Order allow,deny
+    Require all denied
+</Files>
+
+<Files ~  "/*.json$">
+    Order Allow,Deny
+    Require all denied
+</Files>

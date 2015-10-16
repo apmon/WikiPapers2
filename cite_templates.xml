@@ -1,0 +1,89 @@
+
+<mediawiki xmlns="http://www.mediawiki.org/xml/export-0.8/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.mediawiki.org/xml/export-0.8/ http://www.mediawiki.org/xml/export-0.8.xsd" version="0.8" xml:lang="en">
+  <siteinfo>
+    <sitename>WikiCite</sitename>
+    <base>https://grey.colorado.edu/</base>
+    <generator>MediaWiki 1.22.14</generator>
+    <case>case-sensitive</case>
+    <namespaces>
+      <namespace key="-2" case="case-sensitive">Media</namespace>
+      <namespace key="-1" case="first-letter">Special</namespace>
+    </namespaces>
+  </siteinfo>
+  <page>
+    <title>Template:cite</title>
+    <ns>10</ns>
+    <id>45818</id>
+    <revision>
+      <id>3781553</id>
+      <parentid>3781542</parentid>
+      <timestamp>2015-08-21T17:50:01Z</timestamp>
+      <contributor>
+        <username>Krueger</username>
+        <id>52</id>
+      </contributor>
+      <comment>Add second parameter to cite template</comment>
+      <text xml:space="preserve" bytes="55">&lt;includeonly&gt;{{#cite: {{{1}}}|{{{2|b}}}}}&lt;/includeonly&gt;</text>
+      <sha1>sjo3uvxjqyb421etzexljlfmkiyqo92</sha1>
+      <model>wikitext</model>
+      <format>text/x-wiki</format>
+    </revision>
+  </page>
+  <page>
+    <title>Template:citet</title>
+    <ns>10</ns>
+    <id>196212</id>
+    <revision>
+      <id>3781555</id>
+      <timestamp>2015-08-21T17:50:40Z</timestamp>
+      <contributor>
+        <username>Krueger</username>
+        <id>52</id>
+      </contributor>
+      <comment>Create citet template</comment>
+      <text xml:space="preserve" bytes="56">&lt;includeonly&gt;{{#citet: {{{1}}}|{{{2|b}}}}}&lt;/includeonly&gt;</text>
+      <sha1>8htox11a19z4nhl6kx4ul53mxowzhbf</sha1>
+      <model>wikitext</model>
+      <format>text/x-wiki</format>
+    </revision>
+  </page>
+  <page>
+    <title>Template:cite page</title>
+    <ns>10</ns>
+    <id>196122</id>
+    <revision>
+      <id>3781207</id>
+      <parentid>3779695</parentid>
+      <timestamp>2015-06-23T17:27:23Z</timestamp>
+      <contributor>
+        <username>Krueger</username>
+        <id>52</id>
+      </contributor>
+      <comment>Rename parser function from citepaper to citepage in the wikicite extension</comment>
+      <text xml:space="preserve" bytes="43">&lt;includeonly&gt;
+{{#citepage:}}
+&lt;/includeonly&gt;</text>
+      <sha1>lleo9zbq3z3mmil43vepr2qoi34ia1w</sha1>
+      <model>wikitext</model>
+      <format>text/x-wiki</format>
+    </revision>
+  </page>
+  <page>
+    <title>Template:cite ref</title>
+    <ns>10</ns>
+    <id>196207</id>
+    <revision>
+      <id>3781551</id>
+      <parentid>3781550</parentid>
+      <timestamp>2015-08-21T17:46:53Z</timestamp>
+      <contributor>
+        <username>Krueger</username>
+        <id>52</id>
+      </contributor>
+      <text xml:space="preserve" bytes="58">&lt;includeonly&gt;{{#citeref: {{{1}}}|{{{2|b}}}}}&lt;/includeonly&gt;</text>
+      <sha1>qjck54woq5axq1hmv85ydkx0edy2qha</sha1>
+      <model>wikitext</model>
+      <format>text/x-wiki</format>
+    </revision>
+  </page>
+</mediawiki>

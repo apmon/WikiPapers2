@@ -121,7 +121,12 @@ function RenderCite($cite_key = '', $cite_format = "p", $cite_style = "b") {
         };
         
         $cite_style = preg_replace("([^a-zA-Z-])", '', $cite_style); 
-        $csl = file_get_contents(__DIR__ . '/csl/' . $cite_style . '.csl'); 
+        $cite_style_format = preg_replace("([^a-zA-Z-])", '', $cite_format);
+        if ($cite_style_format == "p") {
+            $csl = file_get_contents(__DIR__ . '/csl/' . $cite_style . '.csl'); 
+        } else {
+            $csl = file_get_contents(__DIR__ . '/csl/' . $cite_style . '-' . $cite_style_format . '.csl'); 
+        }
         $citeproc = new citeproc($csl);
         $output .=  $citeproc->render($data->items[0], "citation");
         $output .= "]";

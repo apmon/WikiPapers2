@@ -1,4 +1,3 @@
-
 <?php
  
   // Take credit for your work.
@@ -73,8 +72,25 @@ function RenderCite($cite_key = '', $cite_format = "p", $cite_style = "b") {
         $output = "[[";
         $output .= $cite_key;
         $output .= "|";
+        //Check if the linking data actually returned an entry, if not, we can not create a correct citation
+        //and thus just print the bibkey
+        if (!property_exists($link_data, "zotero_id")) {
+            $output .= $cite_key;
+            $output .= "]]";
+            return $output;
+        }
             
     } else {
+        //Check if the linking data actually returned an entry, if not, we can not create a correct citation
+        //and thus just print the bibkey and link to the non existent wiki page.
+        if (!property_exists($link_data, "zotero_id")) {
+            $output = "[[";
+            $output .= $cite_key;
+            $output .= "|";
+            $output .= $cite_key;
+            $output .= "]]";
+            return $output;
+        }
         $output = "[https://www.zotero.org/groups/" . $wgWikiCiteZoteroGroup . "/items/itemKey/";
         $output .= $link_data->{'zotero_id'} . " ";
     }
@@ -107,6 +123,8 @@ function RenderCite($cite_key = '', $cite_format = "p", $cite_style = "b") {
             $output .= " (" . $author_string . ", " . $date["year"] . ")]";
         } else if ($cite_format = "t") {
             $output .= " ". $author_string . " (" . $date["year"] .")]"; 
+        } else if ($cite_format = "n") {
+            $output .= " ". $author_string . ", " . $date["year"] ."]"; 
         }
     } else {
         $data = json_decode(file_get_contents('https://api.zotero.org/groups/' . $wgWikiCiteZoteroGroupID  . '/items/' . $link_data->{'zotero_id'} . '?format=csljson')); 
@@ -142,7 +160,7 @@ function RenderCite($cite_key = '', $cite_format = "p", $cite_style = "b") {
 
 function CitePaperRenderParserFunction( $parser, $cite_key = '', $cite_style = 'b', $param3 = '' ) {
 
-    //$parser->disableCache();
+  //$parser->disableCache();
 
     return RenderCite($cite_key, "p", $cite_style);
 
@@ -169,14 +187,14 @@ function CitePaperInfoboxRenderParserFunction( $parser ) {
     // The input parameters are wikitext with templates expanded.
     // The output should be wikitext too.
     $output = "{{#ifexist:File:{{PAGENAME}}.pdf|{{WikiPapersPDFBox|{{filepath:{{PAGENAME}}.pdf}} {{PAGENAME}}.pdf}}}}";
-    if (strlen($data->{'data'}->{'abstractNote'}) > 0)
+    if (property_exists($data->{'data'},'abstractNote') && (strlen($data->{'data'}->{'abstractNote'}) > 0))
         $output .= "{{Collapse|Abstract| " . $data->{'data'}->{'abstractNote'} ." |}}\n";
     $output .= "{| class=\"collapsible\" width=\"100%\" style=\"width: 30em; font-size: 90%; border: 1px solid #aaaaaa; background-color: #f9f9f9; color: black; margin-bottom: 0.5em; margin-left: 1em; padding: 0.2em; float: right; clear: right; text-align:left;list-style-type: none;\"\n";
     $output .= "! style=\"text-align: center; background-color:#ccccff;\" colspan=\"2\" |<big>{{PAGENAME}}</big>\n";
     $output .= "|-\n";
     $output .= "|* [" . $wgWikiCiteLinkerURL . "link.php?wiki_id={{PAGENAME}} WikiCite / Zotero Entry] \n";
     //$output .= "* '''Title:''' " . var_dump($data->{'data'}) . "\n";
-    if (strlen($data->{'data'}->{'title'}) > 0)
+    if (property_exists($data->{'data'},'title') && (strlen($data->{'data'}->{'title'}) > 0))
         $output .= "* '''Title:''' " . $data->{'data'}->{'title'} . "\n";
     
     $output .= "* '''Author(s):''' ";
@@ -185,29 +203,36 @@ function CitePaperInfoboxRenderParserFunction( $parser ) {
         if (! $first)
             $output .= " and ";
         $first = False;
-        $output .= $author->{'lastName'} . ", " . $author->{'firstName'} . " " ;
+        if (!property_exists($author, "lastName") || !property_exists($author, "firstName")) {
+            if (property_exists($author, "name")) {
+                $output .= $author->{'name'} . " " ;
+            } else {
+                $output .= "Unknown author ";
+            }
+        } else {
+            $output .= $author->{'lastName'} . ", " . $author->{'firstName'} . " " ;
+        }
     }
     $output .= "\n";
-    if (strlen($data->{'data'}->{'publicationTitle'}) > 0)
+    if (property_exists($data->{'data'},'publicationTitle') && (strlen($data->{'data'}->{'publicationTitle'}) > 0))
         $output .= "* '''Journal:''' " . $data->{'data'}->{'publicationTitle'} . "\n";
-    if (strlen($data->{'data'}->{'date'}) > 0)
+    if (property_exists($data->{'data'},'date') && (strlen($data->{'data'}->{'date'}) > 0))
         $output .= "* '''Date:''' " . $data->{'data'}->{'date'} . "\n";
-    if (strlen($data->{'data'}->{'volume'}) > 0)
+    if (property_exists($data->{'data'},'volume') && (strlen($data->{'data'}->{'volume'}) > 0))
         $output .= "* '''Volume:''' " . $data->{'data'}->{'volume'} . "\n";
-    if (strlen($data->{'data'}->{'issue'}) > 0)
+    if (property_exists($data->{'data'},'issue') && (strlen($data->{'data'}->{'issue'}) > 0))
         $output .= "* '''Issue:''' " . $data->{'data'}->{'issue'} . "\n";
-    if (strlen($data->{'data'}->{'pages'}) > 0)
+    if (property_exists($data->{'data'},'pages') && (strlen($data->{'data'}->{'pages'}) > 0))
         $output .= "* '''Pages:''' " . $data->{'data'}->{'pages'} . "\n";
-    if (strlen($data->{'data'}->{'DOI'}) > 0)
+    if (property_exists($data->{'data'},'DOI') && (strlen($data->{'data'}->{'DOI'}) > 0))
         $output .= "* '''DOI:''' " . $data->{'data'}->{'DOI'} . "\n";
-    if (strlen($data->{'data'}->{'ISSN'}) > 0)
+    if (property_exists($data->{'data'},'ISSN') && (strlen($data->{'data'}->{'ISSN'}) > 0))
         $output .= "* '''ISSN:''' " . $data->{'data'}->{'ISSN'} . "\n";
-    if (strlen($data->{'data'}->{'url'}) > 0)
+    if (property_exists($data->{'data'},'url') && (strlen($data->{'data'}->{'url'}) > 0))
         $output .= "* '''URL:''' [" . $data->{'data'}->{'url'} . "]\n";
     
     $output .= "|}";
     
-    $output["title"];
     $output .= "[[Category:Papers]]";
  
     return array( $output, 'noparse' => false );
@@ -235,7 +260,15 @@ function CiteReferenceRenderParserFunction( $parser, $ref_key, $ref_style = 'b')
             if (! $first)
                 $output .= ", ";
             $first = False;
-            $output .= $author->{'lastName'} . ", " . $author->{'firstName'} . " " ;
+            if (!property_exists($author, "lastName") || !property_exists($author, "firstName")) {
+                if (property_exists($author, "name")) {
+                    $output .= $author->{'name'} . " " ;
+                } else {
+                    $output .= "Unknown author ";
+                }
+            } else {
+                $output .= $author->{'lastName'} . ", " . $author->{'firstName'} . " " ;
+            }
         }
         $output .= " (";
         $output .= $data->{'data'}->{'date'};

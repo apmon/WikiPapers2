@@ -61,97 +61,131 @@ function RenderCite($cite_key = '', $cite_format = "p", $cite_style = "b") {
     global $wgWikiCiteZoteroGroupID;
     global $wgWikiCiteZoteroGroup;
 
-    $link_data = json_decode(file_get_contents($wgWikiCiteLinkerURL . 'wikicite_api.php?wiki_id=' . $cite_key)); 
+    $cite_keys = explode (",", $cite_key);
+
+    $num_cite_keys = count($cite_keys);
+    $cite_key_idx = 0;
+
+    $output = "";
     
-    //Check if there is a page for this key on the wiki.
-    //If yes, then we will link to our wiki, otherwise we
-    //link to the zotero source entry
-    $title = Title::newFromText($cite_key);
+    foreach ($cite_keys as $cite_key) {
+
+        $link_data = json_decode(file_get_contents($wgWikiCiteLinkerURL . 'wikicite_api.php?wiki_id=' . $cite_key)); 
     
-    if ( $title->exists() ) {
-        $output = "[[";
-        $output .= $cite_key;
-        $output .= "|";
-        //Check if the linking data actually returned an entry, if not, we can not create a correct citation
-        //and thus just print the bibkey
-        if (!property_exists($link_data, "zotero_id")) {
-            $output .= $cite_key;
-            $output .= "]]";
-            return $output;
-        }
-            
-    } else {
-        //Check if the linking data actually returned an entry, if not, we can not create a correct citation
-        //and thus just print the bibkey and link to the non existent wiki page.
-        if (!property_exists($link_data, "zotero_id")) {
+        //Check if there is a page for this key on the wiki.
+        //If yes, then we will link to our wiki, otherwise we
+        //link to the zotero source entry
+        $title = Title::newFromText($cite_key);
+    
+        if ( $title->exists() ) {
             $output = "[[";
             $output .= $cite_key;
             $output .= "|";
-            $output .= $cite_key;
-            $output .= "]]";
-            return $output;
+            //Check if the linking data actually returned an entry, if not, we can not create a correct citation
+            //and thus just print the bibkey
+            if (!property_exists($link_data, "zotero_id")) {
+                $output .= $cite_key;
+                $output .= "]]";
+                $output_strings[$cite_key_idx] = $output;
+                $cite_key_idx++;
+                continue;
+            }
+            
+        } else {
+            //Check if the linking data actually returned an entry, if not, we can not create a correct citation
+            //and thus just print the bibkey and link to the non existent wiki page.
+            if (!property_exists($link_data, "zotero_id")) {
+                $output = "[[";
+                $output .= $cite_key;
+                $output .= "|";
+                $output .= $cite_key;
+                $output .= "]]";
+
+                $output_strings[$cite_key_idx] = $output;
+                $cite_key_idx++;
+                continue;
+            }
+            $output = "[https://www.zotero.org/groups/" . $wgWikiCiteZoteroGroup . "/items/itemKey/";
+            $output .= $link_data->{'zotero_id'} . " ";
         }
-        $output = "[https://www.zotero.org/groups/" . $wgWikiCiteZoteroGroup . "/items/itemKey/";
-        $output .= $link_data->{'zotero_id'} . " ";
-    }
 
 
-    if ($cite_style == "b") {
-        //Use the built-in style renderer. This is a fallback for when there is no good CSL files
+        if ($cite_style == "b") {
+            //Use the built-in style renderer. This is a fallback for when there is no good CSL files
 
-        $data = json_decode(file_get_contents('https://api.zotero.org/groups/' . $wgWikiCiteZoteroGroupID . '/items/' . $link_data->{'zotero_id'}));
+            $data = json_decode(file_get_contents('https://api.zotero.org/groups/' . $wgWikiCiteZoteroGroupID . '/items/' . $link_data->{'zotero_id'}));
     
-        if (count($data->{'data'}->{'creators'}) > 2) {
-            $author_string = $data->{'data'}->{'creators'}[0]->{'lastName'};
-            $author_string .= " Et Al";
-        } else if (count($data->{'data'}->{'creators'}) > 1) {
-            $author_string = $data->{'data'}->{'creators'}[0]->{'lastName'} . " and " . $data->{'data'}->{'creators'}[1]->{'lastName'};
-        } else {
-            $author_string = $data->{'data'}->{'creators'}[0]->{'lastName'};
-        }
-        
-        $date = date_parse($data->{'data'}->{'date'});
-        if (($date["year"] == NULL)) {
-            $date = date_parse_from_format("n Y", $data->{'data'}->{'date'});
-            if (($date["year"] == NULL)) {
-                $date = date_parse_from_format("Y", $data->{'data'}->{'date'});
-            }
-            
-        }
-        
-        if ($cite_format == "p") {
-            $output .= " (" . $author_string . ", " . $date["year"] . ")]";
-        } else if ($cite_format = "t") {
-            $output .= " ". $author_string . " (" . $date["year"] .")]"; 
-        } else if ($cite_format = "n") {
-            $output .= " ". $author_string . ", " . $date["year"] ."]"; 
-        }
-    } else {
-        $data = json_decode(file_get_contents('https://api.zotero.org/groups/' . $wgWikiCiteZoteroGroupID  . '/items/' . $link_data->{'zotero_id'} . '?format=csljson')); 
-        //Zotero returns the data in a format that the csl parser doesn't seem to handle
-        if (!property_exists($data->items[0]->issued, "date-parts") && property_exists($data->items[0]->issued, "raw") ) {
-            if (is_numeric($data->items[0]->issued->raw)) {
-                $data->items[0]->issued->{'date-parts'}[0][0] = $data->items[0]->issued->raw;
+            if (count($data->{'data'}->{'creators'}) > 2) {
+                $author_string = $data->{'data'}->{'creators'}[0]->{'lastName'};
+                $author_string .= " Et Al";
+            } else if (count($data->{'data'}->{'creators'}) > 1) {
+                $author_string = $data->{'data'}->{'creators'}[0]->{'lastName'} . " and " . $data->{'data'}->{'creators'}[1]->{'lastName'};
             } else {
-                $data->items[0]->issued->{'date-parts'}[0][0] = date_parse($data->items[0]->issued->raw)["year"];
-                $data->items[0]->issued->{'date-parts'}[0][1] = date_parse($data->items[0]->issued->raw)["month"];
+                $author_string = $data->{'data'}->{'creators'}[0]->{'lastName'};
             }
-        };
         
-        $cite_style = preg_replace("([^a-zA-Z-])", '', $cite_style); 
-        $cite_style_format = preg_replace("([^a-zA-Z-])", '', $cite_format);
-        if ($cite_style_format == "p") {
-            $csl = file_get_contents(__DIR__ . '/csl/' . $cite_style . '.csl'); 
-        } else {
-            $csl = file_get_contents(__DIR__ . '/csl/' . $cite_style . '-' . $cite_style_format . '.csl'); 
-        }
-        $citeproc = new citeproc($csl);
-        $output .=  $citeproc->render($data->items[0], "citation");
-        $output .= "]";
-    }
-    if ( $title->exists() ) {
-        $output .= "]";
+            $date = date_parse($data->{'data'}->{'date'});
+            if (($date["year"] == NULL)) {
+                $date = date_parse_from_format("n Y", $data->{'data'}->{'date'});
+                if (($date["year"] == NULL)) {
+                    $date = date_parse_from_format("Y", $data->{'data'}->{'date'});
+                }
             
+            }
+        
+            if (($cite_format == "p") || ($cite_format = "n")) {
+                $output .= $author_string . ", " . $date["year"] . "]";
+            } else if ($cite_format = "t") {
+                $output .= " ". $author_string . " (" . $date["year"] .")]"; 
+            }
+        } else {
+            $data = json_decode(file_get_contents('https://api.zotero.org/groups/' . $wgWikiCiteZoteroGroupID  . '/items/' . $link_data->{'zotero_id'} . '?format=csljson')); 
+            //Zotero returns the data in a format that the csl parser doesn't seem to handle
+            if (!property_exists($data->items[0]->issued, "date-parts") && property_exists($data->items[0]->issued, "raw") ) {
+                if (is_numeric($data->items[0]->issued->raw)) {
+                    $data->items[0]->issued->{'date-parts'}[0][0] = $data->items[0]->issued->raw;
+                } else {
+                    $data->items[0]->issued->{'date-parts'}[0][0] = date_parse($data->items[0]->issued->raw)["year"];
+                    $data->items[0]->issued->{'date-parts'}[0][1] = date_parse($data->items[0]->issued->raw)["month"];
+                }
+            };
+        
+            $cite_style = preg_replace("([^a-zA-Z-])", '', $cite_style); 
+            $cite_style_format = preg_replace("([^a-zA-Z-])", '', $cite_format);
+            if ($cite_style_format == "p") {
+                $csl = file_get_contents(__DIR__ . '/csl/' . $cite_style . '.csl'); 
+            } else {
+                $csl = file_get_contents(__DIR__ . '/csl/' . $cite_style . '-' . $cite_style_format . '.csl'); 
+            }
+            $citeproc = new citeproc($csl);
+            $tmp =  $citeproc->render($data->items[0], "citation");
+            if ($num_cite_keys > 1) {
+                 if (($tmp[0] == "(") && ($tmp[strlen($tmp) - 1] == ")")) {
+                    $output .= substr($tmp, 1, strlen($tmp) - 2);
+                 }
+            } else {
+                $output .= $tmp;
+            }
+            $output .= "]";
+        }
+        if ( $title->exists() ) {
+            $output .= "]";
+            
+        }
+        $output_strings[$cite_key_idx] = $output;
+        $cite_key_idx++;
+    }
+
+    if ((($cite_style == "b" ) && ($cite_format == "p")) || ($num_cite_keys > 1)) {
+        $output = "(";
+        $cite_key_idx = 0;
+        for ($cite_key_idx = 0; $cite_key_idx < $num_cite_keys; $cite_key_idx++) {
+            $output .= $output_strings[$cite_key_idx];
+            if ($cite_key_idx < ($num_cite_keys - 1)) {
+                $output .= "; ";
+            }
+        }
+        $output .= ")";
     }
     
     return $output;
@@ -160,7 +194,7 @@ function RenderCite($cite_key = '', $cite_format = "p", $cite_style = "b") {
 
 function CitePaperRenderParserFunction( $parser, $cite_key = '', $cite_style = 'b', $param3 = '' ) {
 
-  //$parser->disableCache();
+    //$parser->disableCache();
 
     return RenderCite($cite_key, "p", $cite_style);
 

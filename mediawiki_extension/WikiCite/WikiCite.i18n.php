@@ -18,4 +18,5 @@ $magicWords['en'] = array(
                           'citepapertwo' => array( 0, 'cite' ),
                           'citetpaper' => array( 0, 'citet' ),
                           'citereference' => array( 0, 'citeref' ),
+                          'citebibliography' => array( 0, 'citebibliography' ),
                           );

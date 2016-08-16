@@ -49,6 +49,7 @@ function WikiCiteSetupParserFunction( &$parser ) {
     $parser->setFunctionHook( 'citepapertwo', 'CitePaperRenderParserFunction' );
     $parser->setFunctionHook( 'citetpaper', 'CitetPaperRenderParserFunction' );
     $parser->setFunctionHook( 'citereference', 'CiteReferenceRenderParserFunction' );
+    $parser->setFunctionHook( 'citebibliography', 'CiteBibliographyRenderParserFunction' );
  
     // Return true so that MediaWiki continues to load extensions.
     return true;
@@ -332,4 +333,75 @@ function CiteReferenceRenderParserFunction( $parser, $ref_key, $ref_style = 'b')
  
     return array( $output, 'noparse' => false );
     //    return $output;
+}
+
+//Insert an auto-generated bibliography section into the wiki page from the {{cite}} templates in the page
+function CiteBibliographyRenderParserFunction ( $parser ) {
+
+    //$parser->disableCache();
+    
+    $output = "\n== Bibliography ==\n";
+
+
+    //Get the full text of the page to manually try and find any {{cite}} entries
+    $page = WikiPage::factory ( $parser->getTitle() );
+    $source = $page->getText( Revision::RAW );
+
+    $source_tmp = $source;
+    $total_cite_keys = array();
+    
+    //Go through the text and find {{cite entries.
+    while (strlen($source_tmp) > 0) {
+
+        //Either search for a template, or the actual parser function
+        $pos1 = strpos( $source_tmp, "{{cite" );
+        $pos2 = strpos( $source_tmp, "{{#cite: " );
+
+        if (($pos1 === false) && ($pos2 === false)) {
+            break;
+        }
+        if (($pos1 !== false) && ($pos2 !== false)) {
+            $process_pos = min($pos1, $pos2);
+        } else if ($pos1 !== false) {
+            $process_pos = $pos1;
+        } else {
+            $process_pos = $pos2;
+        }
+
+        $source_tmp = substr($source_tmp, $process_pos);
+        $pos_close = strpos( $source_tmp, "}}"); 
+        $my_reference = substr($source_tmp, 0, $pos_close + 2);        
+
+        $source_tmp = substr($source_tmp, $pos_close + 2);
+
+        //Make sure we don't create circular parsing references.
+        if (strpos($my_reference, "citebibliography") !== false) continue;
+        if (strpos($my_reference, "cite_ref") !== false) continue;
+        if (strpos($my_reference, "cite_page") !== false) continue;
+        
+        $pos_start = strpos ($my_reference, "|");
+        if ($pos_start === false) {
+            $pos_start = strpos($my_reference, ": ");
+        }
+        $cite_key = substr( $my_reference, $pos_start + 1);
+        $pos_end = strpos ( $cite_key, "|");
+        if ($pos_end === false) {
+            $pos_end = strpos ( $cite_key, "}}");
+        }
+        $cite_keys = substr ($cite_key, 0, $pos_end);
+        $cite_keys = explode (",", $cite_keys);
+        foreach ($cite_keys as $cite_key) {
+            array_push ( $total_cite_keys, $cite_key);
+        }
+
+
+    }
+
+    $total_cite_keys = array_unique($total_cite_keys);
+
+    foreach ($total_cite_keys as $cite_key) {
+        $output .= "{{#citeref: " . $cite_key . "|" . $cite_style . "}}\n";
+    }
+    
+    return array ( $output , 'noparse' => false);
 }

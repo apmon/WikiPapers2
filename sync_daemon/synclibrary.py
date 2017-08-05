@@ -16,6 +16,7 @@
 # along with WikiPapers2.  If not, see <http://www.gnu.org/licenses/>.
 
 #Copyright Kai Krueger 2015
+#Copyright Kai Krueger 2017
 
 import sys
 import json
@@ -29,9 +30,10 @@ from datetime import datetime
 import pytz
 import string
 import re
-    
+import urllib2
 
-zotero_creds = json.loads(open('user_writing_config.json').read())  # library credentials
+
+zotero_creds = json.loads(open('zotero_config.json').read())  # library credentials
 db_creds = json.loads(open('database_config.json').read())  # library credentials
 
 pp = pprint.PrettyPrinter(indent=4)
@@ -56,6 +58,31 @@ db = MySQLdb.connect(host=db_creds["host"], # your host, usually localhost
                      charset='utf8') # name of the data base
 
 cur = db.cursor()
+
+if (len(sys.argv) > 1):
+     if (sys.argv[1] == "help"):
+          print "Please use one of 5 commands: \"add\", \"addbibkey\", \"del\", \"delbibkey\" and \"resync\",  \"unlock\" or \"lockcheck\". Add and del each take a zotero ID. Addbibkey and delbibkey take a bibkey"
+          exit()
+     if (sys.argv[1] == "unlock"):
+          hasMoreItems = False;
+          sql = "UPDATE updater SET running=0;";
+          try:
+               cur.execute(sql)
+          except MySQLdb.IntegrityError:
+               print "Error, could not unlock database"
+          db.commit()
+          exit()
+     if (sys.argv[1] == "lockcheck"):
+          sql = "SELECT update_date FROM updater WHERE running=1"
+          try:
+               cur.execute(sql)
+          except MySQLdb.IntegrityError:
+               print "Error, could not check locking database"
+          rows = cur.fetchall();
+          if (len(rows) > 0):
+               print rows[0][0]
+          exit()
+          
 
 #Lock database to ensure we aren't running multiple copies of the updater script
 try:
@@ -110,7 +137,7 @@ def testWikiKeyDuplicate(wikiid, item):
                 return wikiid_tmp
 
 
-def processZoteroItem(item, zotero_date, most_recent):
+def processZoteroItem(item, zotero_date, most_recent, verbose):
      tmp_date_added = dateutil.parser.parse(item.dateAdded)
 
         
@@ -122,6 +149,8 @@ def processZoteroItem(item, zotero_date, most_recent):
                if (tmp_date_added > most_recent):
                     most_recent = tmp_date_added
           else:
+               if verbose:
+                    print "Not processing entry, as its older than the reference data"
                return False, most_recent
 
 
@@ -130,9 +159,12 @@ def processZoteroItem(item, zotero_date, most_recent):
      #We only know how to deal with these types of entries for the moment.
      if not ((item.itemType == 'journalArticle') or (item.itemType == 'bookSection') or (item.itemType == 'book') or (item.itemType == 'thesis') or
              (item.itemType == 'report') or (item.itemType == 'conferencePaper')):
+          if verbose:
+               print "Not processing item, as it is not one of the supported types"
           return True, most_recent
 
      #Check if we have the entry in our linking database already.
+     print item.itemKey;
      try:
           cur.execute("SELECT * FROM id_links WHERE zotero_id = \"" + item.itemKey + "\"")
           rows = cur.fetchall()
@@ -140,6 +172,8 @@ def processZoteroItem(item, zotero_date, most_recent):
           print e 
           return True, most_recent
      if len(rows) > 0:
+          if verbose:
+               print "Not processing item, as it is already in the database"
           return True, most_recent
 
      #Check if we have a bibkey entry in the extra field of the zotero database. If yes, we will use that. If not we try and create our own bibkey
@@ -190,6 +224,36 @@ def processZoteroItem(item, zotero_date, most_recent):
      try:
           cur.execute(sql)
      except MySQLdb.IntegrityError:
+          #We already have this wiki key. Check if this entry might have been deleted
+          print "Duplicate key detected for wiki_id " + wikiid
+          #Querry what the zotero id is for this wiki entry.
+          sql = "SELECT zotero_id FROM id_links WHERE wiki_id = \"" + wikiid + "\""
+          try:
+               cur.execute(sql)
+               rows = cur.fetchall()
+          except:
+               print "*!*!*! Really couldn't deal with this entry"
+               return True, most_recent
+          print "Duplicate was " + rows[0][0]
+          try:
+               zotero_item2 = zlib.fetchItem(rows[0][0])
+               if (not zotero_item2):
+                    raise exception()
+          except:
+               print "Item was deleted for which we are creating a duplicate "
+               sql = "DELETE FROM id_links WHERE zotero_id=\"" + rows[0][0] + "\"";
+               try:
+                    cur.execute(sql)
+               except MySQLdb.IntegrityError:
+                    print "Error, could not delete item "
+               #Now that we have deleted the entry, try reinserting it
+               sql = "INSERT INTO id_links (wiki_id, zotero_id) VALUES ( \"" + wikiid + "\", \"" + item.itemKey + "\")"
+               try:
+                    cur.execute(sql)
+                    print(item.itemKey + " => " + wikiid)
+                    return True, most_recent
+               except:
+                    print "Failed to add entry"
           #We already have this wiki key. Create a new key with a lettered suffix
           wikiid = testWikiKeyDuplicate(wikiid, item)
           sql = "INSERT INTO id_links (wiki_id, zotero_id) VALUES ( \"" + wikiid + "\", \"" + item.itemKey + "\")"
@@ -217,10 +281,70 @@ start = 0;
 
 most_recent = zotero_date
 
+
 if (len(sys.argv) > 1):
-     zotero_item = zlib.fetchItem(sys.argv[1])
-     processZoteroItem(zotero_item, None, None)
-     hasMoreItems = False
+          
+     if (sys.argv[1] == "add"):
+          hasMoreItems = False;
+          if (len(sys.argv) > 2): 
+               zotero_item = zlib.fetchItem(sys.argv[2])
+               if (not zotero_item):
+                    print "Failed to retrieve zotero item for ID " + sys.argv[2]
+                    exit()
+               print zotero_item
+               zotero_date = pytz.utc.localize(datetime(1900, 1, 1, 0, 0, 0));
+               processZoteroItem(zotero_item, None, None, True)
+
+     if (sys.argv[1] == "del"):
+          hasMoreItems = False;
+          if (len(sys.argv) > 2):
+               sql = "DELETE FROM id_links WHERE zotero_id=\"" + sys.argv[2] + "\"";
+               try:
+                    cur.execute(sql)
+               except MySQLdb.IntegrityError:
+                    print "Error, could not delete item "
+
+     if (sys.argv[1] == "delbibkey"):
+          hasMoreItems = False;
+          if (len(sys.argv) > 2):
+               sql = "DELETE FROM id_links WHERE wiki_id=\"" + sys.argv[2] + "\"";
+               try:
+                    cur.execute(sql)
+               except MySQLdb.IntegrityError:
+                    print "Error, could not delete item "
+
+     if (sys.argv[1] == "addbibkey"):
+          hasMoreItems = False;
+          print "Processing bibkey " + sys.argv[2]
+          if (len(sys.argv) > 2):
+               # The search functionality doesn't seem to find bibkey entries in the normal extra field. So we need to hack a workaround
+               # The attachment titels use the bibkey, so the search allows to find those. So use that, and then chain up to the parent entry to add.
+               # Also libZotero doesn't seem to support this at this point. So manually implement this call to the API
+               contents = urllib2.urlopen("https://api.zotero.org/groups/" + str(zotero_creds['libraryID']) + "/items?qmode=everything&itemType=attachment&q=" + str(sys.argv[2])).read()
+               zotero_api_entry = json.loads(contents)
+               if (zotero_api_entry is not None):
+                    if (len(zotero_api_entry) > 0):
+                         print "Found Zotero ID for entry: " + zotero_api_entry[0]["data"]["parentItem"]
+
+                         #We also need to add the old zotero id from the database, in case that was linked wrongly as well. E.g. before renaming key.
+                         sql = "DELETE FROM id_links WHERE zotero_id=\"" + zotero_api_entry[0]["data"]["parentItem"] + "\"";
+                         try:
+                              cur.execute(sql)
+                         except MySQLdb.IntegrityError:
+                              print "Error, could not delete item "
+                         zotero_item = zlib.fetchItem(zotero_api_entry[0]["data"]["parentItem"])
+                         if (not zotero_item):
+                              print "Failed to retrieve zotero item for ID " + zotero_api_entry[0]["data"]["parentItem"]
+                              exit()
+                         print zotero_item
+                         zotero_date = pytz.utc.localize(datetime(1900, 1, 1, 0, 0, 0));
+                         processZoteroItem(zotero_item, None, None, True)
+
+               
+               
+     if (sys.argv[1] == "resync"):
+          zotero_date = pytz.utc.localize(datetime(1900, 1, 1, 0, 0, 0));
+          
 
 while (hasMoreItems):
 
@@ -232,7 +356,7 @@ while (hasMoreItems):
     print zotero_date
 
     for i in items:
-         hasMoreItems, most_recent = processZoteroItem(i, zotero_date, most_recent)
+         hasMoreItems, most_recent = processZoteroItem(i, zotero_date, most_recent, False)
 
     db.commit()
 

@@ -61,8 +61,24 @@ function RenderCite($cite_key = '', $cite_format = "p", $cite_style = "b") {
     global $wgWikiCiteLinkerURL;
     global $wgWikiCiteZoteroGroupID;
     global $wgWikiCiteZoteroGroup;
+    
+    $cache = ObjectCache::getMainWANInstance();
+
+    //$cache_key = $cache->makeKey('Wikicite-citerender-', $cite_key, $cite_format, $cite_style);
+    $cache_key = 'Wikicite-citerender-' . $cite_key .  $cite_format .  $cite_style;
+    $cache_key = str_replace(",","_",$cache_key);
+    $asOf = 0;
+    $output = $cache->get($cache_key, $curTTL, [], $asOf);
+    
+    error_log("Retrieved cache_key " . $cache_key . " from cache: " . $output);
+
+    if ($output != false) {
+       error_log("Using cached entry for " . $cite_key);
+       return $output;
+    }
 
     $cite_keys = explode (",", $cite_key);
+    error_log("Processing the following cite keys: " . print_r($cite_keys,true));
 
     $num_cite_keys = count($cite_keys);
     $cite_key_idx = 0;
@@ -77,6 +93,15 @@ function RenderCite($cite_key = '', $cite_format = "p", $cite_style = "b") {
         //If yes, then we will link to our wiki, otherwise we
         //link to the zotero source entry
         $title = Title::newFromText($cite_key);
+
+        if (!is_object($title)) {
+            $output .= "ERROR: Could not find title object"; 
+            $output .= "]]";
+            $output_strings[$cite_key_idx] = $output;
+            $cite_key_idx++;
+            continue;
+        }
+
     
         if ( $title->exists() ) {
             $output = "[[";
@@ -112,10 +137,25 @@ function RenderCite($cite_key = '', $cite_format = "p", $cite_style = "b") {
 
 
         if ($cite_style == "b") {
-            //Use the built-in style renderer. This is a fallback for when there is no good CSL files
+            error_log("Using builtin parser");
+            //Use the built-in style renderer. This is a fallback for when there is no good CSL files            
 
-            $data = json_decode(file_get_contents('https://api.zotero.org/groups/' . $wgWikiCiteZoteroGroupID . '/items/' . $link_data->{'zotero_id'}));
-    
+            $my_zotero_id = $link_data->{'zotero_id'};
+            $cache_key = 'Wikicite-' . $my_zotero_id . 'built-in';
+            $datas = $cache->getWithSetCallback(
+                                              $cache_key,
+                                              86000,
+                                              function() use ( $my_zotero_id, $wgWikiCiteZoteroGroupID ) {
+                                                  return file_get_contents('https://api.zotero.org/groups/' . $wgWikiCiteZoteroGroupID . '/items/' . $my_zotero_id);
+                                              }
+            );
+            error_log("Retrieving json from built-in cache: " . $datas);
+            $data = json_decode($datas);
+
+
+            //$data = json_decode(file_get_contents('https://api.zotero.org/groups/' . $wgWikiCiteZoteroGroupID . '/items/' . $link_data->{'zotero_id'}));
+            
+            
             if (count($data->{'data'}->{'creators'}) > 2) {
                 $author_string = $data->{'data'}->{'creators'}[0]->{'lastName'};
                 $author_string .= " Et Al";
@@ -126,13 +166,14 @@ function RenderCite($cite_key = '', $cite_format = "p", $cite_style = "b") {
             }
         
             $date = date_parse($data->{'data'}->{'date'});
-            if (($date["year"] == NULL)) {
-                $date = date_parse_from_format("n Y", $data->{'data'}->{'date'});
-                if (($date["year"] == NULL)) {
-                    $date = date_parse_from_format("Y", $data->{'data'}->{'date'});
+            if (($date["year"] == NULL) || ($date["error_count"] != 0)) {
+                if (strpos($data->{'data'}->{'date'}, ' ') !== false) {
+                    $date = date_parse_from_format("n Y", $data->{'data'}->{'date'});
+                } else {
+                    $date["year"] = $data->{'data'}->{'date'};
                 }
-            
             }
+            
         
             if (($cite_format == "p") || ($cite_format = "n")) {
                 $output .= $author_string . ", " . $date["year"] . "]";
@@ -140,15 +181,37 @@ function RenderCite($cite_key = '', $cite_format = "p", $cite_style = "b") {
                 $output .= " ". $author_string . " (" . $date["year"] .")]"; 
             }
         } else {
-            $data = json_decode(file_get_contents('https://api.zotero.org/groups/' . $wgWikiCiteZoteroGroupID  . '/items/' . $link_data->{'zotero_id'} . '?format=csljson')); 
+            $my_zotero_id = $link_data->{'zotero_id'};
+            $cache_key = 'Wikicite-' . $my_zotero_id . 'csljson';
+            $datas = $cache->getWithSetCallback(
+                                              $cache_key,
+                                              86000,
+                                              function() use ( $my_zotero_id, $wgWikiCiteZoteroGroupID ) {
+                                                  return file_get_contents('https://api.zotero.org/groups/' . $wgWikiCiteZoteroGroupID . '/items/' . $my_zotero_id . '?format=csljson');
+                                              }
+            );
+            error_log("Retrieving json from csl cache: " . $datas);
+            $data = json_decode($datas);
+            
+            //$data = json_decode(file_get_contents('https://api.zotero.org/groups/' . $wgWikiCiteZoteroGroupID  . '/items/' . $link_data->{'zotero_id'} . '?format=csljson')); 
             //Zotero returns the data in a format that the csl parser doesn't seem to handle
             if (!property_exists($data->items[0]->issued, "date-parts") && property_exists($data->items[0]->issued, "raw") ) {
                 if (is_numeric($data->items[0]->issued->raw)) {
                     $data->items[0]->issued->{'date-parts'}[0][0] = $data->items[0]->issued->raw;
                 } else {
-                    $data->items[0]->issued->{'date-parts'}[0][0] = date_parse($data->items[0]->issued->raw)["year"];
-                    $data->items[0]->issued->{'date-parts'}[0][1] = date_parse($data->items[0]->issued->raw)["month"];
+                    $date = date_parse($data->items[0]->issued->raw);
+                    if (($date["year"] == NULL) || ($date["error_count"] != 0)) {
+                        if (strpos($data->items[0]->issued->raw, ' ') !== false) {
+                            $date = date_parse_from_format("n Y", $data->items[0]->issued->raw);
+                        } else {
+                            $date["year"] = $data->items[0]->issued->raw;
+                            $date["month"] = 0;
+                        }
+                    }
+                    $data->items[0]->issued->{'date-parts'}[0][0] = $date["year"];
+                    $data->items[0]->issued->{'date-parts'}[0][1] = $date["month"];
                 }
+                error_log("Reference keys: " . print_r($data->items[0]->issued->{'date-parts'},true));
             };
         
             $cite_style = preg_replace("([^a-zA-Z-])", '', $cite_style); 
@@ -188,6 +251,11 @@ function RenderCite($cite_key = '', $cite_format = "p", $cite_style = "b") {
         }
         $output .= ")";
     }
+
+    //$cache_key = $cache->makeKey('Wikicite-citerender-', $cite_key, $cite_format, $cite_style);
+    $cache_key = 'Wikicite-citerender-' . $cite_key .  $cite_format .  $cite_style;
+    $cache_key = str_replace(",","_",$cache_key);
+    $cache->set($cache_key, $output, 86000);
     
     return $output;
 }
@@ -280,6 +348,20 @@ function CiteReferenceRenderParserFunction( $parser, $ref_key, $ref_style = 'b')
     global $wgWikiCiteLinkerURL;
     global $wgWikiCiteZoteroGroupID;
 
+    $cache = ObjectCache::getMainWANInstance();
+
+    $cache_key = 'Wikicite-refrender-' . $ref_key . $ref_style;
+    $cache_key = str_replace(",","_",$cache_key);
+    $asOf = 0;
+    $output = $cache->get($cache_key, $curTTL, [], $asOf);
+    
+    error_log("Retrieved cache_key " . $cache_key . " from cache: " . $output);
+
+    if ($output != false) {
+       error_log("Using cached entry for " . $ref_key);
+       return array( $output, 'noparse' => false );
+    }
+
     $link_data = json_decode(file_get_contents($wgWikiCiteLinkerURL . '/wikicite_api.php?wiki_id=' . $ref_key));
     
     //$parser->disableCache();
@@ -289,6 +371,16 @@ function CiteReferenceRenderParserFunction( $parser, $ref_key, $ref_style = 'b')
 
     $output = "*  ";
     if ($ref_style == "b") {
+        $my_zotero_id = $link_data->{'zotero_id'}; 
+        $cache_key = 'Wikicite-' . $my_zotero_id . 'built-in'; 
+        $datas = $cache->getWithSetCallback( 
+                                                $cache_key, 
+                                                86000, 
+                                                function() use ( $my_zotero_id, $wgWikiCiteZoteroGroupID ) { 
+                                                    return file_get_contents('https://api.zotero.org/groups/' . $wgWikiCiteZoteroGroupID . '/items/' . $my_zotero_id); 
+                                                } 
+                                                ); 
+        $data = json_decode($datas);
         $data = json_decode(file_get_contents('https://api.zotero.org/groups/' . $wgWikiCiteZoteroGroupID  . '/items/' . $link_data->{'zotero_id'}));
         $first = True;
         foreach($data->{'data'}->{'creators'} as $author) {
@@ -314,7 +406,17 @@ function CiteReferenceRenderParserFunction( $parser, $ref_key, $ref_style = 'b')
         if (!property_exists( $link_data, 'zotero_id')) {
             $output .=  $ref_key . " could not be found";
         } else {
-            $data = json_decode(file_get_contents('https://api.zotero.org/groups/' . $wgWikiCiteZoteroGroupID  . '/items/' . $link_data->{'zotero_id'} . '?format=csljson'));
+            $my_zotero_id = $link_data->{'zotero_id'}; 
+            $cache_key = 'Wikicite-' . $my_zotero_id . 'csljson'; 
+            $datas = $cache->getWithSetCallback( 
+                                                $cache_key, 
+                                                86000, 
+                                                function() use ( $my_zotero_id, $wgWikiCiteZoteroGroupID ) { 
+                                                    return file_get_contents('https://api.zotero.org/groups/' . $wgWikiCiteZoteroGroupID . '/items/' . $my_zotero_id . '?format=csljson'); 
+                                                } 
+                                                ); 
+            $data = json_decode($datas);
+            //$data = json_decode(file_get_contents('https://api.zotero.org/groups/' . $wgWikiCiteZoteroGroupID  . '/items/' . $link_data->{'zotero_id'} . '?format=csljson'));
             if (!property_exists($data->items[0]->issued, "date-parts") && property_exists($data->items[0]->issued, "raw") ) {
                 if (is_numeric($data->items[0]->issued->raw)) {
                     $data->items[0]->issued->{'date-parts'}[0][0] = $data->items[0]->issued->raw;
@@ -322,6 +424,7 @@ function CiteReferenceRenderParserFunction( $parser, $ref_key, $ref_style = 'b')
                     $data->items[0]->issued->{'date-parts'}[0][0] = date_parse($data->items[0]->issued->raw)["year"];
                     $data->items[0]->issued->{'date-parts'}[0][1] = date_parse($data->items[0]->issued->raw)["month"];
                 }
+                
             };
             $ref_style = preg_replace("([^a-zA-Z-])", '', $ref_style);
             $csl = file_get_contents(__DIR__ . '/csl/'. $ref_style . '.csl');
@@ -330,17 +433,20 @@ function CiteReferenceRenderParserFunction( $parser, $ref_key, $ref_style = 'b')
         }
     }
 
+    $cache_key = 'Wikicite-refrender-' . $ref_key . $ref_style;
+    $cache_key = str_replace(",","_",$cache_key);
+    $cache->set($cache_key, $output, 86000);
  
     return array( $output, 'noparse' => false );
     //    return $output;
 }
 
 //Insert an auto-generated bibliography section into the wiki page from the {{cite}} templates in the page
-function CiteBibliographyRenderParserFunction ( $parser ) {
+function CiteBibliographyRenderParserFunction ( $parser, $cite_style ) {
 
     //$parser->disableCache();
     
-    $output = "\n== Bibliography ==\n";
+    $output = "\n= References =\n";
 
 
     //Get the full text of the page to manually try and find any {{cite}} entries
@@ -376,12 +482,14 @@ function CiteBibliographyRenderParserFunction ( $parser ) {
 
         //Make sure we don't create circular parsing references.
         if (strpos($my_reference, "citebibliography") !== false) continue;
+        if (strpos($my_reference, "citereferences") !== false) continue;
         if (strpos($my_reference, "cite_ref") !== false) continue;
         if (strpos($my_reference, "cite_page") !== false) continue;
+        if (strpos($my_reference, "citeref") !== false) continue;
         
-        $pos_start = strpos ($my_reference, "|");
+        $pos_start = strpos($my_reference, ": ");
         if ($pos_start === false) {
-            $pos_start = strpos($my_reference, ": ");
+            $pos_start = strpos ($my_reference, "|");
         }
         $cite_key = substr( $my_reference, $pos_start + 1);
         $pos_end = strpos ( $cite_key, "|");
@@ -397,7 +505,10 @@ function CiteBibliographyRenderParserFunction ( $parser ) {
 
     }
 
-    $total_cite_keys = array_unique($total_cite_keys);
+    $total_cite_keys = array_unique($total_cite_keys, SORT_STRING);
+    sort($total_cite_keys, SORT_STRING);
+
+    error_log("Creating bibliography for the following cite keys: " . print_r($total_cite_keys,true));
 
     foreach ($total_cite_keys as $cite_key) {
         $output .= "{{#citeref: " . $cite_key . "|" . $cite_style . "}}\n";

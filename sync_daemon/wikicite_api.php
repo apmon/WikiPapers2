@@ -1,3 +1,4 @@
+<?php header('Access-Control-Allow-Origin: *'); ?>
 {
 
 <?php
@@ -34,6 +35,15 @@ for ($i = 0; $i < 1; $i++) {
         
         if ($result->num_rows > 0) {
             $row = $result->fetch_assoc();
+
+            $context  = stream_context_create(array('http' =>array('method'=>'HEAD')));
+            if (!$fd = fopen("https://www.zotero.org/groups/ccnlab/items/itemKey/". $row["zotero_id"], 'rb', false, $context)) {
+                shell_exec ( "python synclibrary.py delbibkey " . $wiki_key );
+                shell_exec ( "python synclibrary.py addbibkey " . $wiki_key );
+                continue;
+            }
+            fclose($fd);
+            
             echo "\"zotero_id\": \"" . $row["zotero_id"] . "\",\n";
             echo "\"wiki_id\": \"" . $wiki_key . "\"\n";
             break;
@@ -54,6 +64,7 @@ for ($i = 0; $i < 1; $i++) {
     if ($result->num_rows == 0) {
         if ($i == 0) {
             shell_exec ( "python synclibrary.py" );
+            shell_exec ( "python synclibrary.py addbibkey " . $wiki_key );
             continue;
         }
     }
